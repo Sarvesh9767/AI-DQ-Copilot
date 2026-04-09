@@ -1,0 +1,77 @@
+from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import Optional
+import random
+
+router = APIRouter()
+
+# -----------------------------
+# Input Schema
+# -----------------------------
+
+class ExceptionInput(BaseModel):
+    instrument_id: str
+    vendor: str
+    price: Optional[float]
+    market_price: Optional[float]
+    price_deviation_pct: Optional[float]
+    missing_fields: Optional[int]
+    stale_days: Optional[int]
+    asset_class: Optional[str]
+
+
+# -----------------------------
+# Mock AI RCA Engine
+# -----------------------------
+
+def generate_mock_rca(data: ExceptionInput):
+
+    root_cause = "Unknown"
+    action = "Manual investigation required"
+    auto_fix = False
+    confidence = 0.60
+
+    # 1️⃣ Vendor-driven issue
+    if data.price_deviation_pct and data.price_deviation_pct > 15:
+        root_cause = "Vendor Price Feed Issue"
+        action = f"Contact {data.vendor} to validate price discrepancy"
+        confidence = 0.88
+
+    # 2️⃣ Missing data issue
+    elif data.missing_fields and data.missing_fields > 0:
+        root_cause = "Incomplete Vendor Delivery"
+        action = f"Request full dataset re-delivery from {data.vendor}"
+        confidence = 0.82
+
+    # 3️⃣ Stale data
+    elif data.stale_days and data.stale_days > 2:
+        root_cause = "Stale Market Data"
+        action = "Refresh pricing feed and reprocess dataset"
+        confidence = 0.85
+        auto_fix = True
+
+    # 4️⃣ Internal mapping issue
+    elif data.asset_class == "Exotic" and data.price_deviation_pct and data.price_deviation_pct < 5:
+        root_cause = "Internal Pricing Model Misalignment"
+        action = "Validate internal pricing curve and valuation model"
+        confidence = 0.78
+
+    # Add slight variability to simulate AI behavior
+    confidence = round(confidence + random.uniform(-0.05, 0.05), 2)
+
+    return {
+        "predicted_root_cause": root_cause,
+        "confidence_score": confidence,
+        "recommended_action": action,
+        "auto_remediation_possible": auto_fix,
+        "explanation": f"Decision based on deviation: {data.price_deviation_pct}, missing fields: {data.missing_fields}, stale days: {data.stale_days}."
+    }
+
+
+# -----------------------------
+# API Endpoint
+# -----------------------------
+
+@router.post("/ai-rca")
+def ai_rca(input_data: ExceptionInput):
+    return generate_mock_rca(input_data)
