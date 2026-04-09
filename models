@@ -1,0 +1,11 @@
+from sqlalchemy import Column, Integer, String, DateTime, JSON
+from datetime import datetime
+from database import Base
+
+class DQResult(Base):
+    __tablename__ = "dq_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vendor_name = Column(String)
+    issues = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
