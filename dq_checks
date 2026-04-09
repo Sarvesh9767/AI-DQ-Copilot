@@ -1,0 +1,128 @@
+import pandas as pd
+
+# -----------------------------
+# Threshold Config (POC Level)
+# -----------------------------
+PRICE_DEVIATION_THRESHOLD = 5        # %
+STALE_DAYS_THRESHOLD = 2             # days
+
+
+def run_dq_checks(df: pd.DataFrame):
+
+    df = df.copy()
+
+    # -----------------------------------
+    # 1️⃣ Row-Level DQ Checks
+    # -----------------------------------
+
+    df["missing_flag"] = df["missing_fields"] > 0
+    df["stale_flag"] = df["stale_days"] > STALE_DAYS_THRESHOLD
+    df["deviation_flag"] = df["price_deviation_pct"].abs() > PRICE_DEVIATION_THRESHOLD
+
+    df["row_status"] = df.apply(
+        lambda x: "FAIL" if (
+            x["missing_flag"] or
+            x["stale_flag"] or
+            x["deviation_flag"]
+        ) else "PASS",
+        axis=1
+    )
+
+    total_rows = len(df)
+    failed_df = df[df["row_status"] == "FAIL"]
+    failed_rows = len(failed_df)
+
+    # -----------------------------------
+    # 2️⃣ Aggregation Intelligence
+    # -----------------------------------
+
+    vendor_fail_breakdown = (
+        failed_df.groupby("vendor").size().to_dict()
+        if failed_rows > 0 else {}
+    )
+
+    asset_fail_breakdown = (
+        failed_df.groupby("asset_class").size().to_dict()
+        if failed_rows > 0 else {}
+    )
+
+    issue_counts = {
+        "Missing Values": int(df["missing_flag"].sum()),
+        "Stale Prices": int(df["stale_flag"].sum()),
+        "Price Deviation": int(df["deviation_flag"].sum())
+    }
+
+    top_issue = max(issue_counts, key=issue_counts.get)
+    overall_status = "FAIL" if failed_rows > 0 else "PASS"
+
+    # -----------------------------------
+    # 3️⃣ Historical Case Learning
+    # -----------------------------------
+
+    historical_root_cause = "No historical match found"
+    suggested_resolution = "Manual investigation required"
+
+    if failed_rows > 0 and vendor_fail_breakdown and asset_fail_breakdown:
+
+        top_vendor = max(vendor_fail_breakdown, key=vendor_fail_breakdown.get)
+        top_asset = max(asset_fail_breakdown, key=asset_fail_breakdown.get)
+
+        try:
+            history = pd.read_csv("historical_cases.csv", sep="\t")
+
+            # Normalize historical data
+            history["issue_type"] = history["issue_type"].astype(str).str.strip().str.lower()
+            history["vendor"] = history["vendor"].astype(str).str.strip().str.lower()
+            history["asset_class"] = history["asset_class"].astype(str).str.strip().str.lower()
+
+            # Normalize current case
+            top_issue_clean = str(top_issue).strip().lower()
+            top_vendor_clean = str(top_vendor).strip().lower()
+            top_asset_clean = str(top_asset).strip().lower()
+
+            match = history[
+                (history["issue_type"] == top_issue_clean) &
+                (history["vendor"] == top_vendor_clean) &
+                (history["asset_class"] == top_asset_clean)
+            ]
+
+            if not match.empty:
+                historical_root_cause = match.iloc[0]["historical_root_cause"]
+                suggested_resolution = match.iloc[0]["resolution_action"]
+
+        except Exception as e:
+            print("Historical learning error:", e)
+
+    # -----------------------------------
+    # 4️⃣ AI Summary
+    # -----------------------------------
+
+    if failed_rows == 0:
+        summary = "No data quality issues detected. Market data feed is stable."
+    else:
+        summary = (
+            f"Primary issue: {top_issue}. "
+            f"Most impacted vendor: {top_vendor}. "
+            f"Most impacted asset class: {top_asset}. "
+            f"Based on historical cases, likely root cause: {historical_root_cause}."
+        )
+
+    # -----------------------------------
+    # 5️⃣ Final Output
+    # -----------------------------------
+
+    result = {
+        "overall_status": overall_status,
+        "total_rows": total_rows,
+        "failed_rows": failed_rows,
+        "failure_rate_pct": round((failed_rows / total_rows) * 100, 2),
+        "vendor_fail_breakdown": vendor_fail_breakdown,
+        "asset_class_fail_breakdown": asset_fail_breakdown,
+        "issue_counts": issue_counts,
+        "top_issue_type": top_issue,
+        "historical_root_cause": historical_root_cause,
+        "suggested_resolution": suggested_resolution,
+        "ai_summary": summary
+    }
+
+    return result
