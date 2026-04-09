@@ -1,0 +1,55 @@
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+import pandas as pd
+from dq_checks import run_dq_checks
+
+app = FastAPI(
+    title="DQ Copilot - Market Data AI",
+    description="Mock AI Engine for Market Data Pricing DQ Analysis",
+    version="2.0"
+)
+
+# Enable CORS (important if you connect frontend later)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, restrict this
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/")
+def root():
+    return {"message": "DQ Copilot API is running"}
+
+
+@app.post("/upload-csv/")
+async def upload_csv(file: UploadFile = File(...)):
+    try:
+        # -------------------------
+        # 1️⃣ Read Uploaded CSV
+        # -------------------------
+        df = pd.read_csv(file.file)
+
+        if df.empty:
+            return {"error": "Uploaded CSV is empty"}
+
+        # -------------------------
+        # 2️⃣ Run DQ Engine
+        # -------------------------
+        dq_result = run_dq_checks(df)
+
+        # -------------------------
+        # 3️⃣ Validate Output Format
+        # -------------------------
+        if not isinstance(dq_result, dict):
+            return {"error": "Unexpected DQ output format"}
+
+        return dq_result
+
+    except Exception as e:
+        return {
+            "error": "Internal Server Error",
+            "details": str(e)
+        }
